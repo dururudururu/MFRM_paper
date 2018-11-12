@@ -1,0 +1,30 @@
+simulater.parameter <- function(rater.sev, rater.sev.vary, item.diff.vary, item.num) {
+                              #TRUE SCORE 가정: 평균 100, 표준편차 15인 정규분포 따름.
+  item.mean = c(110, 100, 90)
+  person.n = 50
+  
+  #1.문항 난이도 편차
+  item.sd = 0
+  if (item.diff.vary=="H") {item.sd=25}
+  else if (item.diff.vary=="M") {item.sd=15}
+  else (item.diff.vary=="L") {item.sd=5}
+  
+  #2.영역별 문항의 개수
+  item.num = item.num
+
+  #3.평정자 엄격성(관대함)
+  sev.mean=0
+  if (rater.sev=="+") {sev.mean=10}
+  else if (rater.sev=="0") {sev.mean=0}
+  else (rater.sev=="-") {sev.mean=-10}
+  
+  #4.평정자 엄격성 편차
+  sev.sd=0
+  if (rater.sev.vary=="H") {sev.sd=9}
+  else if (rater.sev.vary=="M") {sev.sd=5}
+  else (rater.sev.vary=="L") {sev.sd=1}
+  
+  ## ability - item score(before peer-rate)
+  
+  
+}
