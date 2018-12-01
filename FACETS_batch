@@ -1,0 +1,103 @@
+library(reshape2)
+
+########################### function define ###############################
+### 1. DATA generate
+mfrsim <- function(p, i, k, r) {
+  theta <- rnorm(p, mean=0, sd=2)
+  beta <- sort(runif(i, min=-1, max=1), decreasing = F)
+  tau <- seq(from=-k/10, to=k/10, length.out=k-1)
+  alpha <- rnorm(p, mean=0, sd=1)
+
+  observed <- matrix(0, nrow=p*r, ncol=2+i)
+  for (subject in 1:p) {
+    ## subject ID & rater ID
+    observed[(r*subject-r+1):(r*subject),1] <- subject
+    
+    # rater: p+1 ~ p+r
+    sequence_rater <- 1:r
+    if (subject+r <= p) {sequence_rater=(subject+1):(subject+r)}
+    else {sequence_rater=(subject+1):(subject+r)-p}
+    if (any(sequence_rater<=0)) {sequence_rater[which(sequence_rater<=0)]<-sequence_rater[which(sequence_rater<=0)]+50}
+    observed[(r*subject-r+1):(r*subject),2] <- sequence_rater
+    
+    ## category identifier: https://www.rasch.org/rmt/rmt213a.htm
+    category.indentifier <- function(theta_p, beta, tau, alpha_r) {
+      x=1:i
+      measure=0
+      cumexp=1:k
+      for (item in 1:i) {
+        for (epoch in 2:k) {
+          measure=measure+theta_p-beta[item]-alpha_r-tau[epoch-1]
+          cumexp[epoch] = cumexp[epoch-1] + exp(measure)  
+        }
+        u=runif(1, 0, 1)
+        u=u*cumexp[k]
+        x[item] =min(which(u<=cumexp))
+      }
+      return(x)
+    }
+    
+    ## insert observation
+    for (rater in 1:r) observed[(r*subject-r+rater),3:(i+2)] <-category.indentifier(theta[subject], beta, tau, alpha[sequence_rater[rater]])
+  }
+  
+  observed <- as.data.frame(observed)
+  names(observed)[1:2] <- c("subID", "ratID")
+  
+  dat <- melt(observed, id=c("subID", "ratID"))
+  dat$variable <- as.numeric(dat$variable)
+  output <- list(dat=dat, theta=theta, beta=beta, tau=tau, alpha=alpha)
+  return(output)
+}
+
+
+
+### 2. FACETS control file generate
+simfacets <- function (epoch, param_vec) {
+  p=param_vec[1]; i=param_vec[2]; k=param_vec[3]; r=param_vec[4]
+  setwd(paste0("D:/facets.batch/p",p,"i",i,"k",k,"r",r))
+  output <- mfrsim(p, i, k, r)
+  simdat <- output$dat
+  
+  write.csv(output[2], paste0("theta",epoch,".csv"))
+  write.csv(output[3], paste0("beta",epoch,".csv"))
+  write.csv(output[5], paste0("alpha",epoch,".csv"))
+  
+  write.table(simdat, paste0("simdat", epoch,".txt"), sep=",", col.names=F, row.names = F)
+  words <- readLines(paste0("simdat", epoch,".txt"))
+  
+  sink(paste0("sim", epoch, ".txt"))
+  cat("; sim.txt", "\n")
+  cat("title = MFRM simulation", "\n")
+  cat("convergence = 0.1	; size of largest remaining marginal score residual at convergence", "\n")
+  cat("unexpected = 3.0	; size of smallest standardized residual to report", "\n")
+  cat("arrange = M	; arrange output tables in Measure ascending order", "\n")
+  cat("facets = 3	; there are 3 facets in this analysis", "\n")
+  cat("noncenter = 1	; Subject facet floats", "\n")
+  cat("positive = 1	; for Subject, greater score   greater measure", "\n")
+  cat("Inter-rater = 2	; facet 2 is the rater facet", "\n")
+  cat("pt-biserial=measure ; point-measure correlation", "\n")
+  cat("usort = 1, 2, 3	; sort residuals by 1=Subject, 2=Rater", "\n")
+  cat("Model=", "\n")
+  cat(paste0("  ?,?,?,R", k, "	; R# means number of categories", "\n"))
+  cat("*", "\n")
+  cat("\n")
+  cat("Labels=", "\n")
+  cat("1,Subject", "\n")
+  cat(paste0("1-",p), "\n")
+  cat("*","\n")
+  cat("2,Rater", "\n")
+  cat(paste0("1-",p), "\n")
+  cat("*","\n")
+  cat("3,item", "\n")
+  cat(paste0("1-",i), "\n")
+  cat("*","\n")
+  cat("\n")
+  cat("data =", "\n")
+  for (j in 1:(p*r*i)) cat(words[j], "\n")
+  cat("\n")
+  sink()
+}
+########################### function define end ###############################
+
+for (iter in 1:100) {set.seed(iter); simfacets(iter, param_vec = c(50, 5, 5, 5))}
