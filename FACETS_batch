@@ -1,62 +1,129 @@
-library(reshape2)
-
 ########################### function define ###############################
-### 1. DATA generate
-mfrsim <- function(p, i, k, r) {
+### 1.1.Uniform Rater characteristic
+mfrsim <- function(p, i, k, r, special) {
   theta <- rnorm(p, mean=0, sd=2)
   beta <- sort(runif(i, min=-1, max=1), decreasing = F)
   tau <- seq(from=-k/10, to=k/10, length.out=k-1)
   alpha <- rnorm(p, mean=0, sd=1)
-
+  
+  ## category identifier: https://www.rasch.org/rmt/rmt213a.htm
+  category.indentifier <- function(theta_p, beta, tau, alpha_r) {
+    x=1:i
+    measure=0
+    cumexp=1:k
+    for (item in 1:i) {
+      for (epoch in 2:k) {
+        measure=measure+theta_p-beta[item]-alpha_r-tau[epoch-1]
+        cumexp[epoch] = cumexp[epoch-1] + exp(measure)  
+      }
+      u=runif(1, 0, 1)
+      u=u*cumexp[k]
+      x[item] =min(which(u<=cumexp))
+    }
+    return(x)
+  }
+  
+  ## No special case SIMULATION
   observed <- matrix(0, nrow=p*r, ncol=2+i)
   for (subject in 1:p) {
     ## subject ID & rater ID
     observed[(r*subject-r+1):(r*subject),1] <- subject
-    
+  
     # rater: p+1 ~ p+r
     sequence_rater <- 1:r
     if (subject+r <= p) {sequence_rater=(subject+1):(subject+r)}
     else {sequence_rater=(subject+1):(subject+r)-p}
-    if (any(sequence_rater<=0)) {sequence_rater[which(sequence_rater<=0)]<-sequence_rater[which(sequence_rater<=0)]+50}
+    if (any(sequence_rater<=0)) {sequence_rater[which(sequence_rater<=0)]<-sequence_rater[which(sequence_rater<=0)]+p}
     observed[(r*subject-r+1):(r*subject),2] <- sequence_rater
-    
-    ## category identifier: https://www.rasch.org/rmt/rmt213a.htm
-    category.indentifier <- function(theta_p, beta, tau, alpha_r) {
-      x=1:i
-      measure=0
-      cumexp=1:k
-      for (item in 1:i) {
-        for (epoch in 2:k) {
-          measure=measure+theta_p-beta[item]-alpha_r-tau[epoch-1]
-          cumexp[epoch] = cumexp[epoch-1] + exp(measure)  
-        }
-        u=runif(1, 0, 1)
-        u=u*cumexp[k]
-        x[item] =min(which(u<=cumexp))
-      }
-      return(x)
-    }
+
     
     ## insert observation
     for (rater in 1:r) observed[(r*subject-r+rater),3:(i+2)] <-category.indentifier(theta[subject], beta, tau, alpha[sequence_rater[rater]])
   }
   
+  ### SPECIAL ISSUE outside subject LOOP
+
+  ## SPECIAL ISSUES: spceial = c(random 10%, central 10%, halo 10%)
+  rand.index = (p*0.7+1):(p*0.8)
+  cent.index = (p*0.8+1):(p*0.9)
+  halo.index = (p*0.9+1):p
+  
+  ## Special Case1: Randomness - add random error
+    #Line below
+  
+  ## Special Case2: Central tendency - differential tau functioning
+    # differntial tau.c
+
+    #Line below
+  
+  ## Special Case3: Halo effect - intra-rater first item influences another
+    #Line below
+  
+  ## Special Case1: Randomness - add random error
+  if (special[1]==T) {
+    for (ran in rand.index) {
+      for (rown in which(observed[,2]==ran)) {
+        observed[rown, 3:(i+2)] <-category.indentifier(theta[observed[rown,1]], beta, tau, alpha[ran]+rnorm(1,mean=0,sd=1))
+      }
+    }
+  }
+  
+  ## Special Case2: Central tendency - a few extreme ratings
+  if (special[2]==T) {
+    for (cen in cent.index) {
+      for (rown in which(observed[,2]==cen)) {
+        score <- category.indentifier(theta[observed[rown,1]], beta, tau, alpha[ran])
+        coin <- runif(1,0,1)
+        if (coin<=.5) {score[score==1]=1; score[score==k]=k-1}
+        else if (coin>.5 & coin<=.7) {if (k>=5) {score[score==1]=1; score[score==2]=3; score[score==k]=k-1; score[score==k-1]=k-2}}
+        observed[rown, 3:(i+2)] <- score
+      }
+    }
+  }
+  
+  ## Special Case3: Halo effect - intra-rater First item influences another
+  if (special[3]==T) {
+    for (hal in halo.index) {
+      for (rown in which(observed[,2]==hal)) {
+        
+        items <- category.indentifier(theta[observed[rown,1]], beta, tau, alpha[hal])
+        
+        if (items[1]>1) {items[which(items < items[1])] <- items[1]-1}
+        else {items[which(items > items[1])] <- items[1]+1}
+      
+        if (items[1]<k) {items[which(items > items[1])] <- items[1]+1}
+        else {items[which(items < items[1])] <- items[1]+1}
+      
+        observed[rown,3:(i+2)] <- items
+      } 
+    }
+  }
+  
+  ## OUTPUT result processing
   observed <- as.data.frame(observed)
   names(observed)[1:2] <- c("subID", "ratID")
   
-  dat <- melt(observed, id=c("subID", "ratID"))
+  dat <- reshape2::melt(observed, id=c("subID", "ratID"))
   dat$variable <- as.numeric(dat$variable)
   output <- list(dat=dat, theta=theta, beta=beta, tau=tau, alpha=alpha)
   return(output)
 }
 
+dat <- mfrsim(10, 9, 9, 9, c(F,F,F))
+
 
 
 ### 2. FACETS control file generate
-simfacets <- function (epoch, param_vec) {
+simfacets <- function (epoch, param_vec, special) {
   p=param_vec[1]; i=param_vec[2]; k=param_vec[3]; r=param_vec[4]
-  setwd(paste0("D:/facets.batch/p",p,"i",i,"k",k,"r",r))
-  output <- mfrsim(p, i, k, r)
+  
+  rand=""; cent=""; halo=""
+  if (special[1]==T) rand="R"
+  if (special[2]==T) cent="C"
+  if (special[3]==T) halo="H"
+  
+  setwd(paste0("D:/facets.batch/p",p,"i",i,"k",k,"r",r, rand, cent, halo))
+  output <- mfrsim(p, i, k, r, special)
   simdat <- output$dat
   
   write.csv(output[2], paste0("theta",epoch,".csv"))
@@ -65,6 +132,10 @@ simfacets <- function (epoch, param_vec) {
   
   write.table(simdat, paste0("simdat", epoch,".txt"), sep=",", col.names=F, row.names = F)
   words <- readLines(paste0("simdat", epoch,".txt"))
+  
+  #Hybrid Model for central tendancy measure: https://www.winsteps.com/facetman/modelexamples.htm Fjk model
+  #special issue C - Rater*catergory interaction: alpha*tau
+  #special issue H - Rater*item interaction: alpha*beta
   
   sink(paste0("sim", epoch, ".txt"))
   cat("; sim.txt", "\n")
@@ -100,4 +171,21 @@ simfacets <- function (epoch, param_vec) {
 }
 ########################### function define end ###############################
 
-for (iter in 1:100) {set.seed(iter); simfacets(iter, param_vec = c(50, 5, 5, 5))}
+#param_vec = c(person, item, scale-likert, rater on one person);
+pset = c(10, 30, 50)
+kset = c(5, 7, 9)
+iset = c(3, 5, 7)
+rset = c(3, 5, 7)
+
+## 
+for (p in pset) {
+  for (i in iset) {
+    for (r in rset) {
+      for (k in kset) {
+        for (iter in 1:100) {set.seed(iter); simfacets(iter, param_vec = c(p, i, k, r), special=c(F,F,F))}
+      }
+    }
+  }
+}
+
+
